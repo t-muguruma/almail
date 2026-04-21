@@ -6,6 +6,7 @@ build/
 dist/
 Petal/
 *.spec
+*.code-workspace
 
 Petal_icon.ico
 error_log.txt
