@@ -1,0 +1,15 @@
+{
+    "accounts": [
+        {
+            "id": 2,
+            "email": "roki1116@yahoo.co.jp",
+            "smtp_server": "smtp.mail.yahoo.co.jp",
+            "smtp_port": 465,
+            "imap_server": "imap.mail.yahoo.co.jp",
+            "imap_port": 993,
+            "username": "roki1116@yahoo.co.jp",
+            "password": "3e2gYeupo",
+            "display_html_as_text": 0
+        }
+    ]
+}

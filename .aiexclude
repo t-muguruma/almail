@@ -1,0 +1,14 @@
+# AIに読み取らせたくない設定ファイル
+*.pem
+
+# 重いデータやライブラリ
+node_modules/
+build\
+dist\
+.venv\
+
+# ログファイル
+*.log
+
+# 今回のような監視エラーを避けたい場合、自分自身やgitignoreを指定することも可能
+.gitignore
