@@ -42,7 +42,7 @@ build_app.bat
 ## 📝 ライセンス
 
 プログラムのソースコードおよび開発に関する情報は、以下のメインリポジトリで管理されています。
-https://github.com/sumeragi-sakura/almail
+https://github.com/t-muguruma/almail
 
 ---
 (c) 2026 Petal Development Project.
