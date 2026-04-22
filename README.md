@@ -42,7 +42,7 @@ build_app.bat
 ## 📝 ライセンス
 
 プログラムのソースコードおよび開発に関する情報は、以下のメインリポジトリで管理されています。
-https://github.com/sumeragi-sakura/almail
+https://github.com/t-muguruma/almail
 ※某メーラー名でリポジトリ作成していますが、almailそのものとは何の関係もありません。 　almailが開発が終わりサポートが終了した為、almailライクな軽量メーラーとして、いちから開発しています。
 
 ---
