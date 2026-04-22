@@ -1,15 +1,12 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 
+# データベース (個人情報とメッセージデータ)
+*.db
+
+# ビルド成果物
 build/
 dist/
-Petal/
 *.spec
-*.code-workspace
-
-Petal_icon.ico
-error_log.txt
-
-mailbox.db
-mailbox.db-journal

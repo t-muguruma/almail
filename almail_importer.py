@@ -3,6 +3,7 @@ import email
 from email import policy
 import sqlite3
 import imaplib
+import poplib
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -11,6 +12,8 @@ from email.utils import formatdate
 from email import encoders
 from email.header import decode_header, Header
 import re
+import traceback
+from pathlib import Path
 
 def setup_database(db_path="mailbox.db"):
     """メールデータを保存するローカルDBの作成"""
@@ -33,6 +36,7 @@ def setup_database(db_path="mailbox.db"):
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT,
+            protocol TEXT DEFAULT 'IMAP',
             smtp_server TEXT,
             smtp_port INTEGER,
             imap_server TEXT,
@@ -111,10 +115,20 @@ def setup_database(db_path="mailbox.db"):
     if 'account_id' not in [row[1] for row in cursor.fetchall()]:
         cursor.execute("ALTER TABLE messages ADD COLUMN account_id INTEGER")
 
+    cursor.execute("PRAGMA table_info(accounts)")
+    if 'protocol' not in [row[1] for row in cursor.fetchall()]:
+        cursor.execute("ALTER TABLE accounts ADD COLUMN protocol TEXT DEFAULT 'IMAP'")
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS window_settings (
             name TEXT PRIMARY KEY,
             geometry TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
         )
     ''')
 
@@ -176,11 +190,11 @@ def import_almail_settings(ini_path, conn):
             cursor.execute("SELECT id FROM accounts WHERE email = ?", (email_val,))
             if not cursor.fetchone():
                 cursor.execute("""
-                    INSERT INTO accounts (email, smtp_server, smtp_port, imap_server, imap_port, username, password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (email_val, 
+                    INSERT INTO accounts (email, protocol, smtp_server, smtp_port, imap_server, imap_port, username, password)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (email_val, 'POP3',
                       config['smtp'].group(1) if config['smtp'] else "", 465, 
-                      config['pop'].group(1) if config['pop'] else "", 993, 
+                      config['pop'].group(1) if config['pop'] else "", 995, 
                       config['user'].group(1) if config['user'] else "", ""))
                 conn.commit()
                 return cursor.lastrowid
@@ -265,12 +279,21 @@ def process_and_save_message(msg_bytes, conn, folder_name, account_id, file_path
 
 def import_from_almail(al_folder_path, conn, account_id):
     """AL-Mailのディレクトリから.alファイルを読み取ってDBへ保存"""
-    folder_name = os.path.basename(al_folder_path.rstrip(os.sep))
-    for filename in os.listdir(al_folder_path):
-        if filename.lower().endswith(".al"):
-            file_path = os.path.join(al_folder_path, filename)
-            with open(file_path, 'rb') as f:
-                process_and_save_message(f.read(), conn, folder_name, account_id, file_path=file_path)
+    path_obj = Path(al_folder_path)
+    if not path_obj.is_dir():
+        print(f"Warning: {al_folder_path} is not a directory.")
+        return
+
+    folder_name = path_obj.name
+    try:
+        # ディレクトリ内のファイルを走査
+        for file_item in path_obj.iterdir():
+            if file_item.is_file() and file_item.suffix.lower() == ".al":
+                with file_item.open('rb') as f:
+                    process_and_save_message(f.read(), conn, folder_name, account_id, file_path=str(file_item))
+    except Exception as e:
+        print(f"Failed to expand folder {al_folder_path}. Error: {e}")
+        traceback.print_exc()
 
     conn.commit()
     print(f"Import from {folder_name} completed.")
@@ -279,33 +302,51 @@ def fetch_emails(conn, account_id=None):
     """IMAPサーバーから新着メールを取得する。account_idが指定されない場合は全アカウントを対象とする。"""
     cursor = conn.cursor()
     if account_id:
-        cursor.execute("SELECT id, imap_server, imap_port, username, password FROM accounts WHERE id = ?", (account_id,))
+        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol FROM accounts WHERE id = ?", (account_id,))
     else:
-        cursor.execute("SELECT id, imap_server, imap_port, username, password FROM accounts")
+        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol FROM accounts")
     
     accounts = cursor.fetchall()
     if not accounts:
         return "settings_missing"
 
     results = []
-    for acc_id, server, port, user, pwd in accounts:
+    for acc_id, server, port, user, pwd, protocol in accounts:
         if not all([server, port, user, pwd]):
             continue
 
         try:
-            mail = imaplib.IMAP4_SSL(server, int(port))
-            mail.login(user, pwd)
-            mail.select("inbox")
+            if protocol == 'POP3':
+                # POP3 受信ロジック
+                pop_conn = poplib.POP3_SSL(server, int(port))
+                pop_conn.user(user)
+                pop_conn.pass_(pwd)
+                
+                count, _ = pop_conn.stat()
+                # 最新の20件を取得
+                start = max(1, count - 19)
+                for i in range(start, count + 1):
+                    _, lines, _ = pop_conn.retr(i)
+                    msg_content = b'\n'.join(lines)
+                    process_and_save_message(msg_content, conn, "Inbox", acc_id)
+                
+                pop_conn.quit()
+            else:
+                # IMAP 受信ロジック
+                mail = imaplib.IMAP4_SSL(server, int(port))
+                mail.login(user, pwd)
+                mail.select("inbox")
 
-            status, data = mail.search(None, 'ALL')
-            mail_ids = data[0].split()
+                status, data = mail.search(None, 'ALL')
+                mail_ids = data[0].split()
 
-            # 各アカウント最新20件を取得
-            for m_id in mail_ids[-20:]:
-                status, data = mail.fetch(m_id, '(RFC822)')
-                process_and_save_message(data[0][1], conn, "Inbox", acc_id)
+                # 各アカウント最新20件を取得
+                for m_id in mail_ids[-20:]:
+                    status, data = mail.fetch(m_id, '(RFC822)')
+                    process_and_save_message(data[0][1], conn, "Inbox", acc_id)
 
-            mail.logout()
+                mail.logout()
+            
             results.append("success")
         except Exception as e:
             results.append(f"{user}: {str(e)}")

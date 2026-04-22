@@ -1,0 +1,2 @@
+DEBUG: Resolved DB Path: C:\Users\rokir\AppData\Roaming\Petal\mailbox.db
+DEBUG: DB file exists at path: True
