@@ -60,8 +60,6 @@ class ModernALMail:
     RE_AUTH = {"spf": re.compile(r'spf=([a-z]+)', re.I), "dkim": re.compile(r'dkim=([a-z]+)', re.I), "dmarc": re.compile(r'dmarc=([a-z]+)', re.I), "header_from": re.compile(r'header\.from=([\w.-]+)', re.I)}
 
     APP_VERSION = "1.1.0" # 現在のプログラムのバージョン
-    UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/master/version.json"
-    DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/master/"
     UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/main/version.json"
     DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/main/"
 
@@ -1582,53 +1580,7 @@ class ModernALMail:
 
             # --- Google Security Alert 特殊表示 (Intelligent Parsing) ---
             if sender and "no-reply@accounts.google.com" in sender:
-                # 本文（プレーンテキスト優先）から情報を抽出
-                content_for_parse = body if (body and body.strip()) else self.strip_html_tags(body_html)
-                
-                dev = re.search(r'デバイス:\s*(.*)', content_for_parse)
-                loc = re.search(r'場所:\s*(.*)', content_for_parse)
-                tim = re.search(r'時間:\s*(.*)', content_for_parse)
-                
-                if dev or loc or tim:
-                    petal_google_html = f"""
-                    <html><head><style>
-                        body {{ font-family: 'Segoe UI', 'Meiryo', sans-serif; background-color: #fefefe; padding: 40px; margin: 0; }}
-                        .petal-card {{ 
-                            background: #ffffff; border-radius: 16px; border: 1px solid #ff80ab; 
-                            box-shadow: 0 10px 25px rgba(216, 27, 96, 0.1); padding: 30px; 
-                            max-width: 480px; margin: 0 auto; 
-                        }}
-                        .petal-header {{ 
-                            color: #d81b60; font-size: 20px; font-weight: bold; margin-bottom: 25px; 
-                            text-align: center; border-bottom: 1px dashed #ff80ab; padding-bottom: 15px;
-                        }}
-                        .petal-row {{ margin-bottom: 20px; }}
-                        .petal-label {{ font-size: 11px; color: #999; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }}
-                        .petal-value {{ font-size: 16px; color: #333; font-weight: 500; }}
-                        .petal-footer {{ margin-top: 30px; font-size: 11px; color: #ccc; text-align: center; font-style: italic; }}
-                    </style></head><body>
-                    <div class="petal-card">
-                        <div class="petal-header">🛡️ Google アカウントの保護</div>
-                        <div class="petal-row">
-                            <div class="petal-label">デバイス</div>
-                            <div class="petal-value">💻 {html.escape(dev.group(1).strip() if dev else "不明")}</div>
-                        </div>
-                        <div class="petal-row">
-                            <div class="petal-label">場所</div>
-                            <div class="petal-value">📍 {html.escape(loc.group(1).strip() if loc else "不明")}</div>
-                        </div>
-                        <div class="petal-row">
-                            <div class="petal-label">時間</div>
-                            <div class="petal-value">🕒 {html.escape(tim.group(1).strip() if tim else "不明")}</div>
-                        </div>
-                        <div class="petal-footer">Parsed by Petal Intelligent Engine</div>
-                    </div>
-                    </body></html>
-                    """
-                    self.body_frame.pack_forget()
-                    self.html_view.pack(fill=tk.BOTH, expand=True)
-                    self.html_view.load_html(petal_google_html)
-                    self.show_image_previews(attachments_full)
+                if self._handle_google_security_alert(body, body_html, attachments_full):
                     return
 
             # 表示エリアのリセット
@@ -1676,6 +1628,58 @@ class ModernALMail:
         finally:
             # 処理が終わったら必ずカーソルを元に戻す
             self.root.config(cursor="")
+
+    def _handle_google_security_alert(self, body, body_html, attachments_full):
+        """Google Security Alert 特殊表示のパースと描画"""
+        content_for_parse = body if (body and body.strip()) else self.strip_html_tags(body_html)
+        
+        dev = re.search(r'デバイス:\s*(.*)', content_for_parse)
+        loc = re.search(r'場所:\s*(.*)', content_for_parse)
+        tim = re.search(r'時間:\s*(.*)', content_for_parse)
+        
+        if not (dev or loc or tim):
+            return False
+
+        petal_google_html = f"""
+        <html><head><style>
+            body {{ font-family: 'Segoe UI', 'Meiryo', sans-serif; background-color: #fefefe; padding: 40px; margin: 0; }}
+            .petal-card {{ 
+                background: #ffffff; border-radius: 16px; border: 1px solid #ff80ab; 
+                box-shadow: 0 10px 25px rgba(216, 27, 96, 0.1); padding: 30px; 
+                max-width: 480px; margin: 0 auto; 
+            }}
+            .petal-header {{ 
+                color: #d81b60; font-size: 20px; font-weight: bold; margin-bottom: 25px; 
+                text-align: center; border-bottom: 1px dashed #ff80ab; padding-bottom: 15px;
+            }}
+            .petal-row {{ margin-bottom: 20px; }}
+            .petal-label {{ font-size: 11px; color: #999; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; }}
+            .petal-value {{ font-size: 16px; color: #333; font-weight: 500; }}
+            .petal-footer {{ margin-top: 30px; font-size: 11px; color: #ccc; text-align: center; font-style: italic; }}
+        </style></head><body>
+        <div class="petal-card">
+            <div class="petal-header">🛡️ Google アカウントの保護</div>
+            <div class="petal-row">
+                <div class="petal-label">デバイス</div>
+                <div class="petal-value">💻 {html.escape(dev.group(1).strip() if dev else "不明")}</div>
+            </div>
+            <div class="petal-row">
+                <div class="petal-label">場所</div>
+                <div class="petal-value">📍 {html.escape(loc.group(1).strip() if loc else "不明")}</div>
+            </div>
+            <div class="petal-row">
+                <div class="petal-label">時間</div>
+                <div class="petal-value">🕒 {html.escape(tim.group(1).strip() if tim else "不明")}</div>
+            </div>
+            <div class="petal-footer">Parsed by Petal Intelligent Engine</div>
+        </div>
+        </body></html>
+        """
+        self.body_frame.pack_forget()
+        self.html_view.pack(fill=tk.BOTH, expand=True)
+        self.html_view.load_html(petal_google_html)
+        self.show_image_previews(attachments_full)
+        return True
 
     def update_attachment_bar(self, attachments):
         """添付ファイルリストを更新（フローレイアウト対応）"""

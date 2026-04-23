@@ -70,54 +70,25 @@ def setup_database(db_path="mailbox.db"):
     ''')
     
     # 既存のDBに対するマイグレーション（カラム追加チェック）
-    cursor.execute("PRAGMA table_info(messages)")
-    if 'body_html' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE messages ADD COLUMN body_html TEXT")
-        
-    cursor.execute("PRAGMA table_info(accounts)")
-    if 'display_html_as_text' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN display_html_as_text INTEGER DEFAULT 0")
+    def add_column_if_not_exists(table, column, definition):
+        cursor.execute(f"PRAGMA table_info({table})")
+        if column not in [row[1] for row in cursor.fetchall()]:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
-    cursor.execute("PRAGMA table_info(accounts)")
-    existing_cols = [row[1] for row in cursor.fetchall()]
-    if 'minimize_to_tray' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN minimize_to_tray INTEGER DEFAULT 0")
-    if 'notify_new_mail' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN notify_new_mail INTEGER DEFAULT 0")
-    if 'auto_receive_enabled' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN auto_receive_enabled INTEGER DEFAULT 0")
-    if 'auto_receive_interval' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN auto_receive_interval INTEGER DEFAULT 10")
-    if 'signature' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN signature TEXT")
-    if 'search_almail_at_startup' not in existing_cols:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN search_almail_at_startup INTEGER DEFAULT 0")
-
-    cursor.execute("PRAGMA table_info(accounts)")
-    if 'signature' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN signature TEXT")
-    cursor.execute("PRAGMA table_info(messages)")
-    if 'auth_results' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE messages ADD COLUMN auth_results TEXT")
-
-    cursor.execute("PRAGMA table_info(address_book)")
-    if 'nickname' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE address_book ADD COLUMN nickname TEXT")
-
-    cursor.execute("PRAGMA table_info(messages)")
-    columns = [row[1] for row in cursor.fetchall()]
-    if 'recipient' not in columns:
-        cursor.execute("ALTER TABLE messages ADD COLUMN recipient TEXT")
-    if 'headers' not in columns:
-        cursor.execute("ALTER TABLE messages ADD COLUMN headers TEXT")
-
-    cursor.execute("PRAGMA table_info(messages)")
-    if 'account_id' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE messages ADD COLUMN account_id INTEGER")
-
-    cursor.execute("PRAGMA table_info(accounts)")
-    if 'protocol' not in [row[1] for row in cursor.fetchall()]:
-        cursor.execute("ALTER TABLE accounts ADD COLUMN protocol TEXT DEFAULT 'IMAP'")
+    add_column_if_not_exists("messages", "body_html", "TEXT")
+    add_column_if_not_exists("accounts", "display_html_as_text", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("accounts", "minimize_to_tray", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("accounts", "notify_new_mail", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("accounts", "auto_receive_enabled", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("accounts", "auto_receive_interval", "INTEGER DEFAULT 10")
+    add_column_if_not_exists("accounts", "signature", "TEXT")
+    add_column_if_not_exists("accounts", "search_almail_at_startup", "INTEGER DEFAULT 0")
+    add_column_if_not_exists("messages", "auth_results", "TEXT")
+    add_column_if_not_exists("address_book", "nickname", "TEXT")
+    add_column_if_not_exists("messages", "recipient", "TEXT")
+    add_column_if_not_exists("messages", "headers", "TEXT")
+    add_column_if_not_exists("messages", "account_id", "INTEGER")
+    add_column_if_not_exists("accounts", "protocol", "TEXT DEFAULT 'IMAP'")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS window_settings (
