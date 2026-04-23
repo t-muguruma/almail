@@ -62,6 +62,8 @@ class ModernALMail:
     APP_VERSION = "1.1.0" # 現在のプログラムのバージョン
     UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/master/version.json"
     DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/master/"
+    UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/main/version.json"
+    DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/main/"
 
     def __init__(self, root):
         self.root = root
