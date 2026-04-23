@@ -68,6 +68,16 @@ def setup_database(db_path="mailbox.db"):
             data BLOB
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            major INTEGER,
+            minor INTEGER,
+            patch INTEGER,
+            content TEXT,
+            installed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
     # 既存のDBに対するマイグレーション（カラム追加チェック）
     def add_column_if_not_exists(table, column, definition):

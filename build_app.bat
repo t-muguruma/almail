@@ -9,17 +9,42 @@ echo ==================================================
 rem スクリプトのあるディレクトリに移動
 cd /d "%~dp0"
 
-echo [準備] バージョン情報を入力してください (例: 1.1.0)
-set /p APP_VER="Version: "
+echo [準備] 現在のバージョン情報を取得中...
+set "CUR_VER=0.0.0"
+for /f "tokens=2 delims==" %%I in ('findstr /C:"APP_VERSION =" modern_almail.py') do set "RAW_V=%%I"
+if defined RAW_V (
+    for /f "tokens=1 delims=#" %%A in ("%RAW_V%") do set "RAW_V=%%A"
+    set "RAW_V=%RAW_V: =%"
+    set "CUR_VER=%RAW_V:"=%"
+)
+
+echo [準備] 現在のバージョン: %CUR_VER%
+set /p APP_VER="新しいバージョンを入力 (そのままEnterで %CUR_VER%): "
+if "%APP_VER%"=="" set "APP_VER=%CUR_VER%"
+
 echo [準備] 更新内容を入力してください
 set /p APP_INFO="Update Info: "
 
+echo [準備] modern_almail.py の APP_VERSION を更新中...
+
+set "PYTHON_EXE="
+rem python.exe の場所を特定（1つ目に見つかったものを採用）
+for /f "tokens=*" %%i in ('where python 2^>nul') do if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+
+if not defined PYTHON_EXE (
+    echo [エラー] Python が見つかりません。PATHの設定を確認してください。
+    pause
+    exit /b 1
+)
+
+echo [情報] 使用する Python: "%PYTHON_EXE%"
+
+rem modern_almail.py のバージョンを更新（常に UTF-8 で上書き）
+"%PYTHON_EXE%" -c "import re, io; p='modern_almail.py'; data=io.open(p, 'r', encoding='utf-8').read(); data=re.sub(r'APP_VERSION = \".*\"', 'APP_VERSION = \"%APP_VER%\"', data); io.open(p, 'w', encoding='utf-8', newline='\n').write(data)"
+
 echo [準備] version.json を生成中...
-echo { > version.json
-echo   "version": "%APP_VER%", >> version.json
-echo   "info": "%APP_INFO%", >> version.json
-echo   "filename": "Petal_Setup.exe" >> version.json
-echo } >> version.json
+rem version.json も Python を使って UTF-8 で確実に出力
+"%PYTHON_EXE%" -c "import json, sys, io; d={'version': sys.argv[1], 'info': sys.argv[2], 'filename': 'Petal_Setup.exe'}; io.open('version.json', 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False, indent=2))" "%APP_VER%" "%APP_INFO%"
 
 echo [準備] 実行環境の確認中...
 if not exist "modern_almail.spec" (
@@ -40,20 +65,6 @@ if exist "W:\myProjects\almail\Petal\Petal.exe" (
     if errorlevel 1 goto LOCK_ERROR
     ren "W:\myProjects\almail\Petal\Petal.exe.test" "Petal.exe" >nul 2>&1
 )
-
-echo [準備] 依存ライブラリのチェック中...
-set "PYTHON_EXE="
-
-rem python.exe の場所を特定（1つ目に見つかったものを採用）
-for /f "tokens=*" %%i in ('where python 2^>nul') do if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
-
-if not defined PYTHON_EXE (
-    echo [エラー] Python が見つかりません。PATHの設定を確認してください。
-    pause
-    exit /b 1
-)
-
-echo [情報] 使用する Python: "%PYTHON_EXE%"
 
 rem 依存ライブラリのチェック（出力を一時ファイルに書き込み、失敗時のみ表示）
 "%PYTHON_EXE%" -c "import PIL, PyInstaller; print('OK')" > python_check.tmp 2>&1
