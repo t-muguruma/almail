@@ -28,6 +28,7 @@ import webbrowser
 import tempfile
 import threading
 import email.utils
+import datetime
 from tkinterweb import HtmlFrame
 import tkinterweb_tkhtml
 try:
@@ -567,8 +568,8 @@ class ModernALMail:
         subject, body, msg_date = cursor.fetchone()
 
         # 日時の抽出試行 (例: 4月21日 15:00)
-        # 年はメールの送信年から推測
-        year = msg_date.split()[3] if len(msg_date.split()) > 3 else "2026"
+        # 年はメールの送信年から推測、取得できない場合は実行時の年を使用
+        year = msg_date.split()[3] if len(msg_date.split()) > 3 else str(datetime.datetime.now().year)
         date_match = self.RE_DATE_TIME.search(body)
         
         start_dt = ""
