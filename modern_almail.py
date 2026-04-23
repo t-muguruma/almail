@@ -1316,8 +1316,15 @@ class ModernALMail:
         accounts = cursor.fetchall()
         
         if not accounts:
-            messagebox.showwarning("警告", "インポート先のアカウントが登録されていません。先にアカウント設定を行ってください。")
-            return
+            if messagebox.askyesno("確認", "インポート先のアカウントが登録されていません。\nインポート専用の「ローカル用アカウント」を作成して続行しますか？"):
+                self.conn.execute("INSERT INTO accounts (email, protocol) VALUES (?, ?)", ("local_archive@petal", "POP3"))
+                self.conn.commit()
+                self.refresh_folders()
+                # 作成したアカウントをリストに反映
+                cursor.execute("SELECT id, email FROM accounts")
+                accounts = cursor.fetchall()
+            else:
+                return
 
         # 簡易的なアカウント選択ダイアログ
         select_win = tk.Toplevel(self.root)
@@ -1373,9 +1380,14 @@ class ModernALMail:
                 if not acc_id:
                     cursor.execute("SELECT id FROM accounts LIMIT 1")
                     acc = cursor.fetchone()
-                    acc_id = acc[0] if acc else None
+                    if acc:
+                        acc_id = acc[0]
+                    else:
+                        # まったくアカウントがない場合、受け皿としてローカルアカウントを作成
+                        cursor.execute("INSERT INTO accounts (email, protocol) VALUES (?, ?)", ("local_archive@petal", "POP3"))
+                        acc_id = cursor.lastrowid
 
-                if acc:
+                if acc_id:
                     # 3. メールデータのインポート
                     mail_root = os.path.join(found_path, "Mail")
                     for sub in os.listdir(mail_root):
