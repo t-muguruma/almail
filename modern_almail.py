@@ -60,8 +60,8 @@ class ModernALMail:
     RE_AUTH = {"spf": re.compile(r'spf=([a-z]+)', re.I), "dkim": re.compile(r'dkim=([a-z]+)', re.I), "dmarc": re.compile(r'dmarc=([a-z]+)', re.I), "header_from": re.compile(r'header\.from=([\w.-]+)', re.I)}
 
     APP_VERSION = "1.1.0" # 現在のプログラムのバージョン
-    UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/main/version.json"
-    DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/main/"
+    UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/master/version.json"
+    DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/master/"
 
     def __init__(self, root):
         self.root = root

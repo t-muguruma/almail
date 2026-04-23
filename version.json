@@ -1,5 +1,5 @@
 { 
-  "version": "1.1.5", 
-  "info": "最小化時のバックグラウンド動作移行の障害解消", 
+  "version": "1.1.6", 
+  "info": "アップデート情報確認先URLが間違っていた問題を解消", 
   "filename": "Petal_Setup.exe" 
 } 
