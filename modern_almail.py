@@ -60,8 +60,8 @@ class ModernALMail:
     RE_AUTH = {"spf": re.compile(r'spf=([a-z]+)', re.I), "dkim": re.compile(r'dkim=([a-z]+)', re.I), "dmarc": re.compile(r'dmarc=([a-z]+)', re.I), "header_from": re.compile(r'header\.from=([\w.-]+)', re.I)}
 
     APP_VERSION = "1.1.0" # 現在のプログラムのバージョン
-    UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/master/version.json"
-    DOWNLOAD_BASE_URL = "https://github.com/t-muguruma/almail/raw/master/"
+    UPDATE_URL = "https://raw.githubusercontent.com/sumeragi-sakura/Petal/main/version.json"
+    DOWNLOAD_BASE_URL = "https://raw.githubusercontent.com/sumeragi-sakura/Petal/main/"
 
     def __init__(self, root):
         self.root = root
@@ -297,12 +297,27 @@ class ModernALMail:
 
     def on_window_minimize(self, event):
         """最小化されたときに設定に応じてトレイへ格納"""
-        if event.widget == self.root and self.root.state() == 'iconic':
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT minimize_to_tray FROM accounts LIMIT 1")
-            row = cursor.fetchone()
-            if row and row[0] and pystray:
+        # Windowsでは最小化直後に状態を確認すると反映が間に合わない場合があるため、わずかに遅延させる
+        if event.widget == self.root:
+            self.root.after(10, self._check_and_hide_to_tray)
+
+    def _check_and_hide_to_tray(self):
+        """実際に最小化状態（iconic）ならトレイへ隠す"""
+        if self.root.state() == 'iconic':
+            if self._is_tray_enabled():
                 self.hide_to_tray()
+
+    def _is_tray_enabled(self):
+        """設定で「最小化時はトレイに入れる」が有効か確認"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT minimize_to_tray FROM accounts LIMIT 1")
+        row = cursor.fetchone()
+        if row and row[0]:
+            if pystray:
+                return True
+            else:
+                print("Warning: pystray is not installed. Tray feature is disabled.")
+        return False
 
     def hide_to_tray(self):
         """ウィンドウを隠してトレイアイコンを表示"""
