@@ -544,7 +544,7 @@ class ModernALMail:
         # HTML表示用 (埋め込み)
         self.html_view = HtmlFrame(self.body_container)
 
-        # 初期状態�EチE��ストを表示
+        # 初期状態のテキストを表示
         self.body_frame.pack(fill=tk.BOTH, expand=True)
         self.bind_context_menu(self.body_text)
         
@@ -555,7 +555,7 @@ class ModernALMail:
         except:
             pass
 
-        # キャンバスのスクロール篁E��更新用
+        # キャンバスのスクロール範囲更新用
         def _on_preview_resize(e):
             self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
         self.preview_frame.bind("<Configure>", _on_preview_resize)
@@ -612,8 +612,8 @@ class ModernALMail:
         start_dt = ""
         if date_match:
             m, d, h, minute = [x.zfill(2) for x in date_match.groups()]
-            # Google Calendarのdatesパラメータ形弁E YYYYMMDDTHHmmSSZ (UTC)
-            # 簡易的にJSTとして扱ぁE��めZは付けず、E��始�E終亁E時間をセチE��
+            # Google Calendarのdatesパラメータ形式 YYYYMMDDTHHmmSSZ (UTC)
+            # 簡易的にJSTとして扱うためZは付けず、開始・終了時間をセット
             start_dt = f"{year}{m}{d}T{h}{minute}00"
             end_h = str(int(h) + 1).zfill(2)
             end_dt = f"{year}{m}{d}T{end_h}{minute}00"
@@ -787,7 +787,7 @@ class ModernALMail:
             menu.add_command(label="↩ 返信", command=self.reply_mail)
             menu.add_command(label="↪ 転送", command=self.forward_mail)
             if folder == "Drafts":
-                menu.add_command(label="✏︁ 下書きを編集", command=lambda: self._edit_draft(item))
+                menu.add_command(label="✏ 下書きを編集", command=lambda: self._edit_draft(item))
             menu.add_separator()
             menu.add_command(label="🗑 削除", command=self.delete_selected_mail)
             menu.post(event.x_root, event.y_root)
@@ -1048,7 +1048,7 @@ class ModernALMail:
             sel = tree.selection()
             if sel:
                 item = tree.item(sel[0], "values") # (nick, name, email)
-                # AL-Mail風に "名前 <email>" 形式でセチE��
+                # AL-Mail風に "名前 <email>" 形式でセット
                 target_entry.delete(0, tk.END)
                 target_entry.insert(0, f"{item[1]} <{item[2]}>")
                 picker.destroy()
