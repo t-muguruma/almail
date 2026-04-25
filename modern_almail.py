@@ -378,6 +378,7 @@ class ModernALMail:
         menubar = tk.Menu(self.root)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="新規作成", command=self.open_compose_window)
+        file_menu.add_command(label="アカウントの追加...", command=lambda: self.open_account_edit_dialog(None, self.refresh_folders))
         file_menu.add_command(label="メール受信", command=self.receive_mail)
         file_menu.add_command(label="アドレス帳...", command=self.open_address_book)
         file_menu.add_command(label="AL-Mailフォルダをインポート...", command=self.import_dialog)
@@ -428,6 +429,8 @@ class ModernALMail:
 
         btn_receive = tk.Button(self.toolbar, text="📥 受信", bg="#e3f2fd", command=self.receive_mail, relief=tk.FLAT, padx=10)
         btn_receive.pack(side=tk.LEFT, padx=2, pady=2)
+        btn_add_acc = tk.Button(self.toolbar, text="👤+ アカウント追加", bg="#f3e5f5", command=lambda: self.open_account_edit_dialog(None, self.refresh_folders), relief=tk.FLAT, padx=10)
+        btn_add_acc.pack(side=tk.LEFT, padx=2, pady=2)
         btn_compose = tk.Button(self.toolbar, text="📝 新規作成", bg="#e8f5e9", command=self.open_compose_window, relief=tk.FLAT, padx=10)
         btn_compose.pack(side=tk.LEFT, padx=2, pady=2)
         btn_addr = tk.Button(self.toolbar, text="📖 アドレス帳", bg="#fff3e0", command=self.open_address_book, relief=tk.FLAT, padx=10)
@@ -1310,6 +1313,10 @@ class ModernALMail:
                 if row[12]: sig_text.insert("1.0", row[12])
                 if len(row) > 13 and row[13]: protocol_var.set(row[13])
             toggle_interval_state()
+        else:
+            # 新規追加時のデフォルト値
+            interval_ent.insert(0, "10")
+        toggle_interval_state()
 
         def test_conn():
             edit_win.config(cursor="watch")
@@ -1342,7 +1349,8 @@ class ModernALMail:
         btn_frame = ttk.Frame(edit_win)
         btn_frame.pack(pady=10)
         ttk.Button(btn_frame, text="接続テスト", command=test_conn).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="保存", command=save).pack(side=tk.LEFT, padx=5)
+        btn_label = "追加" if not account_id else "保存"
+        ttk.Button(btn_frame, text=btn_label, command=save).pack(side=tk.LEFT, padx=5)
 
     def import_dialog(self):
         """AL-Mailフォルダを特定のアカウントへインポート"""
