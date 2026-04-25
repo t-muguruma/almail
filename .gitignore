@@ -5,6 +5,7 @@ __pycache__/
 
 # データベース (個人情報とメッセージデータ)
 *.db
+google_client_secrets.json
 
 # ビルド成果物
 build/

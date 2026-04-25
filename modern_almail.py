@@ -84,6 +84,29 @@ class ModernALMail:
                            (major, minor, patch, f"Installed version {self.APP_VERSION}"))
             self.conn.commit()
 
+    def get_app_data_dir(self):
+        """アプリケーションのデータ保存ディレクトリを取得"""
+        if getattr(sys, 'frozen', False):
+            appdata_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), "Petal")
+        else:
+            appdata_dir = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.exists(appdata_dir):
+            os.makedirs(appdata_dir)
+        return appdata_dir
+
+    def _load_google_credentials(self):
+        """外部JSONファイルからGoogle OAuthの認証情報を読み込む"""
+        cred_path = os.path.join(self.get_app_data_dir(), "google_client_secrets.json")
+        if os.path.exists(cred_path):
+            try:
+                with open(cred_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # google_client_secrets.json の形式は {"client_id": "...", "client_secret": "..."} とします
+                    return data.get("client_id"), data.get("client_secret")
+            except:
+                pass
+        return None, None
+
     def __init__(self, root):
         self.root = root
 
@@ -1268,11 +1291,18 @@ class ModernALMail:
                 nb.select(acc_frame)
                 return
 
-            # 注意: 開発者用クライアントID/シークレットが設定されていないと拒否されます
+            # 外部ファイルから認証情報を読み込む
+            client_id, client_secret = self._load_google_credentials()
+            
+            if not client_id or not client_secret:
+                cred_path = os.path.join(self.get_app_data_dir(), "google_client_secrets.json")
+                messagebox.showerror("設定不足", f"Googleの認証情報が見つかりません。\n\n以下のファイルを作成し、IDとシークレットを記述してください:\n{cred_path}")
+                return
+
             client_config = {
                 "installed": {
-                    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
-                    "client_secret": "YOUR_CLIENT_SECRET",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
                     "redirect_uris": ["http://localhost"]
@@ -2004,33 +2034,28 @@ Petalは、AL-Mailの使ぁE��手を踏襲しつつ、現代皁E��イン
 
     def check_for_updates(self):
         """GitHub上のversion.jsonを確認してアップデートを行う"""
+        # DB操作をメインスレッドで行い、比較用のローカルバージョンを確定させる
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT major, minor, patch FROM app_versions ORDER BY major DESC, minor DESC, patch DESC LIMIT 1")
+        local_v = cursor.fetchone() or (0, 0, 0)
+
         def _check():
             import ssl
             try:
-                # GitHub APIやRawファイルへのアクセスにはUser-Agentの設定が推奨される
                 req = urllib.request.Request(self.UPDATE_URL, headers={'User-Agent': 'Petal-Update-Checker'})
-                # Windows環境での証明書エラーを回避するためのコンテキスト作成
                 context = ssl._create_unverified_context()
                 with urllib.request.urlopen(req, context=context) as response:
                     data = json.loads(response.read().decode('utf-8'))
                 
                 remote_version_str = data.get("version", "1.0.0")
-                update_info = data.get("info", "新しいバージョンが利用可能です。")
-                installer_name = data.get("filename", "Petal_Setup.exe")
-
-                # DBから最新のローカルバージョンを取得
-                cursor = self.conn.cursor()
-                cursor.execute("SELECT major, minor, patch FROM app_versions ORDER BY major DESC, minor DESC, patch DESC LIMIT 1")
-                local_v = cursor.fetchone() or (0, 0, 0)
-                
                 remote_v = self._parse_version_string(remote_version_str)
-                is_newer = remote_v > local_v
 
-                if is_newer:
+                if remote_v > local_v:
+                    update_info = data.get("info", "新しいバージョンが利用可能です。")
+                    installer_name = data.get("filename", "Petal_Setup.exe")
                     if messagebox.askyesno("アップデート", f"新しいバージョン ({remote_version_str}) が見つかりました。\n\n【更新内容】\n{update_info}\n\n今すぐアップデートしますか？"):
                         self._perform_update(installer_name)
                 else:
-                    # メインスレッド以外でGUIを出す場合は after を使うのが安全
                     self.root.after(0, lambda: messagebox.showinfo("アップデート", f"Petal は最新の状態です。\n現在のバージョン: {self.APP_VERSION}"))
             except urllib.error.HTTPError as e:
                 self.root.after(0, lambda: messagebox.showerror("エラー", f"アップデート情報が見つかりません(404)。\nURLを確認してください。\n{self.UPDATE_URL}"))
