@@ -14,6 +14,12 @@ from email.header import decode_header, Header
 import re
 import traceback
 from pathlib import Path
+import json
+import base64
+try:
+    import keyring
+except ImportError:
+    keyring = None
 
 def setup_database(db_path="mailbox.db"):
     """メールデータを保存するローカルDBの作成"""
@@ -49,7 +55,8 @@ def setup_database(db_path="mailbox.db"):
             auto_receive_enabled INTEGER DEFAULT 0,
             auto_receive_interval INTEGER DEFAULT 10,
             signature TEXT,
-            search_almail_at_startup INTEGER DEFAULT 0
+            search_almail_at_startup INTEGER DEFAULT 0,
+            use_oauth2 INTEGER DEFAULT 0
         )
     ''')
     cursor.execute('''
@@ -99,6 +106,7 @@ def setup_database(db_path="mailbox.db"):
     add_column_if_not_exists("messages", "headers", "TEXT")
     add_column_if_not_exists("messages", "account_id", "INTEGER")
     add_column_if_not_exists("accounts", "protocol", "TEXT DEFAULT 'IMAP'")
+    add_column_if_not_exists("accounts", "use_oauth2", "INTEGER DEFAULT 0")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS window_settings (
@@ -279,27 +287,70 @@ def import_from_almail(al_folder_path, conn, account_id):
     conn.commit()
     print(f"Import from {folder_name} completed.")
 
+def get_google_access_token(email):
+    """Windows Credential Managerからトークンを読み込み、必要ならリフレッシュして返す"""
+    if not keyring: return None
+    token_json = keyring.get_password("Petal_Google_OAuth", email)
+    if not token_json: return None
+    
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request as GoogleRequest
+        
+        creds_data = json.loads(token_json)
+        creds = Credentials.from_authorized_user_info(creds_data)
+        
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(GoogleRequest())
+            # 更新されたトークンを保存
+            keyring.set_password("Petal_Google_OAuth", email, creds.to_json())
+        
+        return creds.token
+    except Exception as e:
+        print(f"OAuth refresh error: {e}")
+        return None
+
+def generate_xoauth2_string(user, token):
+    """IMAP/SMTP認証用のXOAUTH2文字列を生成"""
+    auth_str = f"user={user}\x01auth=Bearer {token}\x01\x01"
+    return base64.b64encode(auth_str.encode()).decode()
+
 def fetch_emails(conn, account_id=None):
-    """IMAPサーバーから新着メールを取得する。account_idが指定されない場合は全アカウントを対象とする。"""
+    """受信サーバーから新着メールを取得する。"""
     cursor = conn.cursor()
     if account_id:
-        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol FROM accounts WHERE id = ?", (account_id,))
+        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol, use_oauth2 FROM accounts WHERE id = ?", (account_id,))
     else:
-        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol FROM accounts")
+        cursor.execute("SELECT id, imap_server, imap_port, username, password, protocol, use_oauth2 FROM accounts")
     
     accounts = cursor.fetchall()
     if not accounts:
         return "settings_missing"
 
     results = []
-    for acc_id, server, port, user, pwd, protocol in accounts:
-        if not all([server, port, user, pwd]):
+    for acc_id, server, port, user, pwd, protocol, use_oauth in accounts:
+        if not use_oauth and not all([server, port, user, pwd]):
             continue
 
         try:
+            access_token = None
+            if use_oauth:
+                access_token = get_google_access_token(user)
+                if not access_token:
+                    results.append(f"{user}: OAuth2トークンの更新に失敗しました。再ログインが必要です。")
+                    continue
+
             if protocol == 'POP3':
-                # POP3 受信ロジック
-                pop_conn = poplib.POP3_SSL(server, int(port))
+                # GmailのPOP3はOAuth2対応が特殊なため、OAuth2時はIMAP推奨
+                if str(port) == '995':
+                    pop_conn = poplib.POP3_SSL(server, int(port))
+                else:
+                    pop_conn = poplib.POP3(server, int(port))
+                    try:
+                        pop_conn.stls()
+                    except:
+                        pass # STARTTLS非対応の古いサーバーを許容
+
                 pop_conn.user(user)
                 pop_conn.pass_(pwd)
                 
@@ -313,9 +364,19 @@ def fetch_emails(conn, account_id=None):
                 
                 pop_conn.quit()
             else:
-                # IMAP 受信ロジック
-                mail = imaplib.IMAP4_SSL(server, int(port))
-                mail.login(user, pwd)
+                if str(port) == '993':
+                    mail = imaplib.IMAP4_SSL(server, int(port))
+                else:
+                    mail = imaplib.IMAP4(server, int(port))
+                    try:
+                        mail.starttls()
+                    except:
+                        pass
+
+                if use_oauth:
+                    mail.authenticate('XOAUTH2', lambda x: f"user={user}\x01auth=Bearer {access_token}\x01\x01")
+                else:
+                    mail.login(user, pwd)
                 mail.select("inbox")
 
                 status, data = mail.search(None, 'ALL')
@@ -338,17 +399,22 @@ def fetch_emails(conn, account_id=None):
 def send_email(conn, to_addr, subject, body, account_id, attachment_paths=None):
     """指定されたアカウントを使用してメールを送信する"""
     cursor = conn.cursor()
-    cursor.execute("SELECT email, smtp_server, smtp_port, username, password FROM accounts WHERE id = ?", (account_id,))
+    cursor.execute("SELECT email, smtp_server, smtp_port, username, password, use_oauth2 FROM accounts WHERE id = ?", (account_id,))
     account = cursor.fetchone()
     
     if not account:
         return "settings_missing"
 
-    from_addr, server, port, user, pwd = account
-    if not all([from_addr, server, port, user, pwd]):
+    from_addr, server, port, user, pwd, use_oauth = account
+    if not use_oauth and not all([from_addr, server, port, user, pwd]):
         return "settings_missing"
 
     try:
+        access_token = None
+        if use_oauth:
+            access_token = get_google_access_token(from_addr)
+            if not access_token: return "OAuth2リフレッシュ失敗"
+
         # メッセージの作成
         if attachment_paths:
             msg = MIMEMultipart()
@@ -370,32 +436,87 @@ def send_email(conn, to_addr, subject, body, account_id, attachment_paths=None):
         msg['To'] = to_addr
         msg['Date'] = formatdate(localtime=True)
 
-        # SMTPサーバーに接続して送信 (SSLを想定)
-        with smtplib.SMTP_SSL(server, int(port)) as smtp:
-            smtp.login(user, pwd)
-            smtp.send_message(msg)
+        if str(port) == '465':
+            with smtplib.SMTP_SSL(server, int(port)) as smtp:
+                if use_oauth:
+                    smtp.docmd('AUTH', 'XOAUTH2 ' + generate_xoauth2_string(user, access_token))
+                else:
+                    smtp.login(user, pwd)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(server, int(port)) as smtp:
+                try:
+                    smtp.starttls()
+                except:
+                    pass
+                if use_oauth:
+                    smtp.docmd('AUTH', 'XOAUTH2 ' + generate_xoauth2_string(user, access_token))
+                else:
+                    smtp.login(user, pwd)
+                smtp.send_message(msg)
         return "success"
     except Exception as e:
         return str(e)
 
-def test_connection(imap_server, imap_port, smtp_server, smtp_port, username, password):
-    """IMAPとSMTPの両方の接続テストを行う"""
+def test_connection(protocol, incoming_server, incoming_port, smtp_server, smtp_port, username, password, use_oauth=False):
+    """接続テストを行う"""
     results = []
     
-    # IMAP Test
-    try:
-        mail = imaplib.IMAP4_SSL(imap_server, int(imap_port))
-        mail.login(username, password)
-        mail.logout()
-        results.append("✅ IMAP接続成功")
-    except Exception as e:
-        results.append(f"❌ IMAP接続失敗: {str(e)}")
+    access_token = None
+    if use_oauth:
+        access_token = get_google_access_token(username)
+        if not access_token: return "❌ OAuth2認証が完了していません"
+
+    # Incoming Test (IMAP/POP3)
+    if protocol == 'POP3':
+        try:
+            if str(incoming_port) == '995':
+                pop = poplib.POP3_SSL(incoming_server, int(incoming_port))
+            else:
+                pop = poplib.POP3(incoming_server, int(incoming_port))
+                try: pop.stls()
+                except: pass
+            pop.user(username)
+            pop.pass_(password)
+            pop.quit()
+            results.append("✅ POP3接続成功")
+        except Exception as e:
+            results.append(f"❌ POP3接続失敗: {str(e)}")
+    else:
+        try:
+            if str(incoming_port) == '993':
+                mail = imaplib.IMAP4_SSL(incoming_server, int(incoming_port))
+            else:
+                mail = imaplib.IMAP4(incoming_server, int(incoming_port))
+                try: mail.starttls()
+                except: pass
+            if use_oauth:
+                mail.authenticate('XOAUTH2', lambda x: f"user={username}\x01auth=Bearer {access_token}\x01\x01")
+            else:
+                mail.login(username, password)
+            mail.logout()
+            results.append("✅ IMAP接続成功")
+        except Exception as e:
+            results.append(f"❌ IMAP接続失敗: {str(e)}")
         
     # SMTP Test
     try:
-        with smtplib.SMTP_SSL(smtp_server, int(smtp_port)) as smtp:
-            smtp.login(username, password)
-        results.append("✅ SMTP接続成功")
+        if str(smtp_port) == '465':
+            with smtplib.SMTP_SSL(smtp_server, int(smtp_port)) as smtp:
+                if use_oauth:
+                    smtp.docmd('AUTH', 'XOAUTH2 ' + generate_xoauth2_string(username, access_token))
+                else:
+                    smtp.login(username, password)
+            results.append("✅ SMTP接続成功")
+        else:
+            with smtplib.SMTP(smtp_server, int(smtp_port)) as smtp:
+                try: smtp.starttls()
+                except: pass
+                if use_oauth:
+                    smtp.docmd('AUTH', 'XOAUTH2 ' + generate_xoauth2_string(username, access_token))
+                else:
+                    smtp.login(username, password)
+            results.append("✅ SMTP接続成功")
     except Exception as e:
         results.append(f"❌ SMTP接続失敗: {str(e)}")
         

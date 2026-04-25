@@ -59,7 +59,7 @@ class ModernALMail:
     RE_DOMAIN = re.compile(r'@([\w.-]+)')
     RE_AUTH = {"spf": re.compile(r'spf=([a-z]+)', re.I), "dkim": re.compile(r'dkim=([a-z]+)', re.I), "dmarc": re.compile(r'dmarc=([a-z]+)', re.I), "header_from": re.compile(r'header\.from=([\w.-]+)', re.I)}
 
-    APP_VERSION = "1.1.11" # 現在のプログラムのバージョン
+    APP_VERSION = "1.1.12" # 現在のプログラムのバージョン
 
     # これより以下変更しないでください t.muguruma
     UPDATE_URL = "https://raw.githubusercontent.com/t-muguruma/almail/master/version.json"
@@ -1237,12 +1237,80 @@ class ModernALMail:
         edit_win.grab_set()
 
         nb = ttk.Notebook(edit_win)
+        email_var = tk.StringVar()
         nb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         acc_frame = ttk.Frame(nb); nb.add(acc_frame, text="アカウント")
+        oauth_frame = ttk.Frame(nb); nb.add(oauth_frame, text="OAuth2 (Google)")
         adv_frame = ttk.Frame(nb); nb.add(adv_frame, text="詳細設定")
         auto_rx_frame = ttk.Frame(nb); nb.add(auto_rx_frame, text="自動受信")
         sig_frame = ttk.Frame(nb); nb.add(sig_frame, text="署名")
+
+        use_oauth2_var = tk.BooleanVar(value=False)
+
+        # --- OAuth2タブのUI改善 ---
+        ttk.Label(oauth_frame, text="Googleアカウントの認証", font=("", 12, "bold"), foreground="#d81b60").pack(pady=15)
+
+        ttk.Label(oauth_frame, text="使用するメールアドレス:").pack(padx=30, anchor="w")
+        oauth_email_ent = ttk.Entry(oauth_frame, textvariable=email_var, width=40)
+        oauth_email_ent.pack(pady=(5, 15), padx=30, fill=tk.X)
+        self.bind_context_menu(oauth_email_ent)
+        
+        ttk.Label(oauth_frame, text="※OAuth認証では、このアプリにパスワードを入力する必要はありません。\n認証はブラウザ上で安全に行われます。", 
+                  foreground="gray", justify=tk.LEFT).pack(pady=10, padx=30)
+
+        # OAuth2認証フロー
+        def run_google_auth():
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            email = entries['email'].get()
+            if not email:
+                messagebox.showwarning("警告", "先に「アカウント」タブでメールアドレスを入力してください。")
+                nb.select(acc_frame)
+                return
+
+            # 注意: 開発者用クライアントID/シークレットが設定されていないと拒否されます
+            client_config = {
+                "installed": {
+                    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+                    "client_secret": "YOUR_CLIENT_SECRET",
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": ["http://localhost"]
+                }
+            }
+            
+            try:
+                # ローカルサーバーを立ててブラウザを起動
+                flow = InstalledAppFlow.from_client_config(
+                    client_config, 
+                    scopes=['https://mail.google.com/']
+                )
+                # ブラウザでの拒否を減らすため、明確なポートを指定せず
+                # 且つ、ユーザーに「詳細」から続行してもらうよう促すメッセージを追加
+                creds = flow.run_local_server(
+                    port=0,
+                    authorization_prompt_message="ブラウザが開かない場合はこのリンクをクリックしてください: {url}",
+                    success_message="認証が完了しました！このタブを閉じてPetalに戻ってください。"
+                )
+                
+                # トークンをWindows Credential Managerに保存
+                if keyring:
+                    keyring.set_password("Petal_Google_OAuth", email, creds.to_json())
+                    use_oauth2_var.set(True)
+                    messagebox.showinfo("成功", "Google認証が完了しました。")
+                    # 設定を自動でGmail向けにする
+                    entries['imap_server'].delete(0, tk.END); entries['imap_server'].insert(0, "imap.gmail.com")
+                    entries['imap_port'].delete(0, tk.END); entries['imap_port'].insert(0, "993")
+                    entries['smtp_server'].delete(0, tk.END); entries['smtp_server'].insert(0, "smtp.gmail.com")
+                    entries['smtp_port'].delete(0, tk.END); entries['smtp_port'].insert(0, "465")
+            except Exception as e:
+                error_msg = str(e)
+                if "blocked" in error_msg or "403" in error_msg:
+                    error_msg += "\n\n【ヒント】\nGoogle Cloud Consoleで作成したアプリが「テスト中」の場合、認証するメールアドレスを「テストユーザー」に追加する必要があります。"
+                messagebox.showerror("認証エラー", f"ブラウザでの認証に失敗しました:\n{error_msg}")
+
+        ttk.Button(oauth_frame, text="Googleでログインして認証...", command=run_google_auth).pack(pady=20)
+        ttk.Checkbutton(oauth_frame, text="OAuth2 (Google) を使用する", variable=use_oauth2_var).pack(pady=10)
 
         # プロトコル選択
         ttk.Label(acc_frame, text="受信プロトコル").grid(row=0, column=0, padx=10, pady=5, sticky="e")
@@ -1263,7 +1331,10 @@ class ModernALMail:
         entries = {}
         for i, (label, key) in enumerate(fields, start=1):
             ttk.Label(acc_frame, text=label).grid(row=i, column=0, padx=10, pady=5, sticky="e")
-            entry = ttk.Entry(acc_frame, width=30)
+            if key == "email":
+                entry = ttk.Entry(acc_frame, width=30, textvariable=email_var)
+            else:
+                entry = ttk.Entry(acc_frame, width=30)
             if key == "password": entry.config(show="*")
             entry.grid(row=i, column=1, padx=10, pady=5)
             entries[key] = entry
@@ -1301,7 +1372,7 @@ class ModernALMail:
         # 既存データの読み込み (編集)
         if account_id:
             cursor = self.conn.cursor()
-            cursor.execute("SELECT email, smtp_server, smtp_port, imap_server, imap_port, username, password, display_html_as_text, minimize_to_tray, notify_new_mail, auto_receive_enabled, auto_receive_interval, signature, protocol FROM accounts WHERE id = ?", (account_id,))
+            cursor.execute("SELECT email, smtp_server, smtp_port, imap_server, imap_port, username, password, display_html_as_text, minimize_to_tray, notify_new_mail, auto_receive_enabled, auto_receive_interval, signature, protocol, use_oauth2 FROM accounts WHERE id = ?", (account_id,))
             row = cursor.fetchone()
             if row:
                 for entry, value in zip(entries.values(), row[:7]): entry.insert(0, str(value))
@@ -1312,6 +1383,7 @@ class ModernALMail:
                 interval_ent.insert(0, str(row[11]))
                 if row[12]: sig_text.insert("1.0", row[12])
                 if len(row) > 13 and row[13]: protocol_var.set(row[13])
+                if len(row) > 14: use_oauth2_var.set(bool(row[14]))
             toggle_interval_state()
         else:
             # 新規追加時のデフォルト値
@@ -1322,9 +1394,11 @@ class ModernALMail:
             edit_win.config(cursor="watch")
             edit_win.update()
             res = importer.test_connection(
+                protocol_var.get(),
                 entries['imap_server'].get(), entries['imap_port'].get(),
                 entries['smtp_server'].get(), entries['smtp_port'].get(),
-                entries['username'].get(), entries['password'].get()
+                entries['username'].get(), entries['password'].get(),
+                use_oauth=use_oauth2_var.get()
             )
             edit_win.config(cursor="")
             messagebox.showinfo("接続テスト結果", res, parent=edit_win)
@@ -1332,14 +1406,14 @@ class ModernALMail:
         def save():
             data = {k: v.get() for k, v in entries.items()}
             params = (data['email'], data['smtp_server'], data['smtp_port'], data['imap_server'], data['imap_port'], data['username'], data['password'], 
-                      int(html_as_text_var.get()), int(tray_var.get()), int(notify_var.get()), int(auto_rx_enabled_var.get()), int(interval_ent.get() or 10), sig_text.get("1.0", tk.END), protocol_var.get())
+                      int(html_as_text_var.get()), int(tray_var.get()), int(notify_var.get()), int(auto_rx_enabled_var.get()), int(interval_ent.get() or 10), sig_text.get("1.0", tk.END), protocol_var.get(), int(use_oauth2_var.get()))
             
             if account_id:
                 self.conn.execute("""UPDATE accounts SET email=?, smtp_server=?, smtp_port=?, imap_server=?, imap_port=?, username=?, password=?, 
-                                     display_html_as_text=?, minimize_to_tray=?, notify_new_mail=?, auto_receive_enabled=?, auto_receive_interval=?, signature=?, protocol=? WHERE id=?""", params + (account_id,))
+                                     display_html_as_text=?, minimize_to_tray=?, notify_new_mail=?, auto_receive_enabled=?, auto_receive_interval=?, signature=?, protocol=?, use_oauth2=? WHERE id=?""", params + (account_id,))
             else:
                 self.conn.execute("""INSERT INTO accounts (email, smtp_server, smtp_port, imap_server, imap_port, username, password, 
-                                     display_html_as_text, minimize_to_tray, notify_new_mail, auto_receive_enabled, auto_receive_interval, signature, protocol) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", params)
+                                     display_html_as_text, minimize_to_tray, notify_new_mail, auto_receive_enabled, auto_receive_interval, signature, protocol, use_oauth2) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", params)
             
             self.conn.commit()
             callback()

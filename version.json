@@ -1,5 +1,5 @@
 {
-  "version": "1.1.11",
-  "info": "メールアカウントの追加機能を追加",
+  "version": "1.1.12",
+  "info": "Googleログインの追加",
   "filename": "Petal_Setup.exe"
 }
